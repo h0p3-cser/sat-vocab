@@ -38,26 +38,72 @@ export function sample(words, start, end, count) {
   return reshuffle(pool.slice(0, take))
 }
 
+const STOP_CHARS = new Set("的不使被地得了着过与和或而把将对为以于其之所无非未可能会要让给从向在上下中有是个一")
+
+export function glossTooClose(left, right) {
+  if (left === right) return true
+  const leftSenses = sensesOf(left)
+  const rightSenses = sensesOf(right)
+  if (leftSenses.some((sense) => sense.length >= 2 && rightSenses.includes(sense))) return true
+  const leftGrams = bigrams(left)
+  const rightGrams = bigrams(right)
+  for (const gram of leftGrams) {
+    for (const other of rightGrams) {
+      if (gram[0] === other[0] || gram[1] === other[1] || gram[0] === other[1] || gram[1] === other[0]) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+function sensesOf(gloss) {
+  return gloss.split(/[；，、]/).map((part) => part.trim()).filter(Boolean)
+}
+
+function bigrams(gloss) {
+  const grams = []
+  for (const sense of sensesOf(gloss)) {
+    for (let index = 0; index < sense.length - 1; index++) {
+      const first = sense[index]
+      const second = sense[index + 1]
+      if (!isCjk(first) || !isCjk(second)) continue
+      if (STOP_CHARS.has(first) || STOP_CHARS.has(second)) continue
+      grams.push(first + second)
+    }
+  }
+  return grams
+}
+
+function isCjk(char) {
+  const code = char.codePointAt(0)
+  return code >= 0x4e00 && code <= 0x9fff
+}
+
 export function optionsFor(word, bank) {
   const others = bank.filter((item) => item.id !== word.id && item.zh !== word.zh)
   const same = reshuffle(others.filter((item) => word.pos && item.pos === word.pos))
   const rest = reshuffle(others.filter((item) => !word.pos || item.pos !== word.pos))
   const picks = []
   const seen = new Set([word.zh])
-  take(same, word.zh.length, picks, seen)
-  if (picks.length < 4) take(rest, word.zh.length, picks, seen)
+  take(same, word.zh.length, picks, seen, word.zh, true)
+  if (picks.length < 4) take(rest, word.zh.length, picks, seen, word.zh, true)
+  if (picks.length < 4) take(reshuffle(others), word.zh.length, picks, seen, word.zh, false)
   const choices = picks.map((item) => ({ text: item.zh, correct: false }))
   choices.push({ text: word.zh, correct: true })
   return reshuffle(choices).map((choice, index) => ({ ...choice, id: index }))
 }
 
-function take(candidates, length, picks, seen) {
+function take(candidates, length, picks, seen, anchor, keepDistance) {
   const window = candidates.slice(0, 12)
   const ranked = window.slice().sort((a, b) => Math.abs(a.zh.length - length) - Math.abs(b.zh.length - length))
+  const chosen = [anchor, ...picks.map((item) => item.zh)]
   for (const candidate of ranked.concat(candidates.slice(window.length))) {
     if (picks.length >= 4) return
     if (seen.has(candidate.zh)) continue
+    if (keepDistance && chosen.some((text) => glossTooClose(text, candidate.zh))) continue
     seen.add(candidate.zh)
+    chosen.push(candidate.zh)
     picks.push(candidate)
   }
 }

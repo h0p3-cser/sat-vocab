@@ -1,4 +1,4 @@
-const CACHE = "sat-vocab-v3"
+const CACHE = "sat-vocab-v4"
 const ASSETS = [
   "./",
   "./index.html",
